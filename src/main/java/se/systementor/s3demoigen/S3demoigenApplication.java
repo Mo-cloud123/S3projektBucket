@@ -10,8 +10,14 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
+import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.ConversationRole;
+import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
+import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
@@ -35,6 +41,64 @@ public class S3demoigenApplication implements CommandLineRunner {
         SpringApplication.run(S3demoigenApplication.class, args);
     }
 
+    private void runAI() {
+        System.out.println("Running AI...");
+        Dotenv dotenv = Dotenv.load();
+
+        String accessKey = dotenv.get("ACCESS_KEY");
+        String secretKey = dotenv.get("SECRET_KEY");
+        String bedrockModel = dotenv.get("BEDROCK_MODEL");
+
+
+        BedrockRuntimeClient bedrockRuntimeClient = BedrockRuntimeClient.builder()
+                .credentialsProvider(new AwsCredentialsProvider() {
+                    @Override
+                    public AwsCredentials resolveCredentials() {
+                        return AwsBasicCredentials.builder()
+                                .accessKeyId(accessKey)
+                                .secretAccessKey(secretKey).build();
+                    }
+                })
+                .region(Region.US_EAST_1) // OBS! Enable meta Llama 3 8B Instruct i US EAST!
+                .build();
+
+
+        var inputText = "Describe the purpose of a 'hello world' program in one line.";
+        var message = Message.builder()
+                .content(ContentBlock.fromText(inputText))
+                .role(ConversationRole.USER)
+                .build();
+
+
+        try {
+            // Send the message with a basic inference configuration.
+            ConverseResponse response = bedrockRuntimeClient.converse(request -> request
+                    .modelId(bedrockModel)
+                    .messages(message)
+                    .inferenceConfig(config -> config
+                            .maxTokens(512)
+                            .temperature(0.5F)
+                            .topP(0.9F)));
+
+            // Retrieve the generated text from Bedrock's response object.
+            var responseText = response.output().message().content().get(0).text();
+            System.out.println(responseText);
+
+            System.out.println("AI response: " + responseText);
+
+        } catch (SdkClientException e) {
+            System.err.printf("ERROR: Can't invoke model. Reason: %s",  e.getMessage());
+            throw new RuntimeException(e);
+        }
+
+
+
+
+        // Här kan du implementera AI-funktionalitet
+        // Exempelvis, skapa en klient för att interagera med en AI-tjänst
+
+        // och utföra önskade operationer.
+    }
 
     private void runPolly() {
 
@@ -221,8 +285,8 @@ public class S3demoigenApplication implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-
-        runPolly();
+        runAI();
+//        runPolly();
         return;
 
 
