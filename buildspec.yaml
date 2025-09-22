@@ -5,7 +5,9 @@ phases:
       java: corretto21
   build:
     commands:
-      - echo Build completed on `date`
+     - echo Starting build on date
+     - mvn -v
+     - java -version
   post_build:
     commands:
       - echo Build completed on `date`
