@@ -1,7 +1,5 @@
 package se.systementor.s3demoigen;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -10,29 +8,15 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
-import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
-import software.amazon.awssdk.services.bedrockruntime.model.ConversationRole;
-import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
-import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.transcribe.TranscribeClient;
-import software.amazon.awssdk.services.transcribe.model.*;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.Scanner;
-
-import java.util.UUID;
 
 @SpringBootApplication
 public class S3demoigenApplication implements CommandLineRunner {
@@ -41,310 +25,117 @@ public class S3demoigenApplication implements CommandLineRunner {
         SpringApplication.run(S3demoigenApplication.class, args);
     }
 
-    private void runAI() {
-        System.out.println("Running AI...");
-        Dotenv dotenv = Dotenv.load();
-
-        String accessKey = dotenv.get("ACCESS_KEY");
-        String secretKey = dotenv.get("SECRET_KEY");
-        String bedrockModel = dotenv.get("BEDROCK_MODEL");
-
-
-        BedrockRuntimeClient bedrockRuntimeClient = BedrockRuntimeClient.builder()
-                .credentialsProvider(new AwsCredentialsProvider() {
-                    @Override
-                    public AwsCredentials resolveCredentials() {
-                        return AwsBasicCredentials.builder()
-                                .accessKeyId(accessKey)
-                                .secretAccessKey(secretKey).build();
-                    }
-                })
-                .region(Region.US_EAST_1) // OBS! Enable meta Llama 3 8B Instruct i US EAST!
-                .build();
-
-
-        var inputText = "Describe the purpose of a 'hello world' program in one line.";
-        var message = Message.builder()
-                .content(ContentBlock.fromText(inputText))
-                .role(ConversationRole.USER)
-                .build();
-
-
-        try {
-            // Send the message with a basic inference configuration.
-            ConverseResponse response = bedrockRuntimeClient.converse(request -> request
-                    .modelId(bedrockModel)
-                    .messages(message)
-                    .inferenceConfig(config -> config
-                            .maxTokens(512)
-                            .temperature(0.5F)
-                            .topP(0.9F)));
-
-            // Retrieve the generated text from Bedrock's response object.
-            var responseText = response.output().message().content().get(0).text();
-            System.out.println(responseText);
-
-            System.out.println("AI response: " + responseText);
-
-        } catch (SdkClientException e) {
-            System.err.printf("ERROR: Can't invoke model. Reason: %s",  e.getMessage());
-            throw new RuntimeException(e);
-        }
-
-
-
-
-        // Här kan du implementera AI-funktionalitet
-        // Exempelvis, skapa en klient för att interagera med en AI-tjänst
-
-        // och utföra önskade operationer.
-    }
-
-    private void runPolly() {
-
-        System.out.println("Running Polly...");
+    @Override
+    public void run(String... args) {
         Dotenv dotenv = Dotenv.load();
 
         String accessKey = dotenv.get("ACCESS_KEY");
         String secretKey = dotenv.get("SECRET_KEY");
         String bucketName = dotenv.get("BUCKET_NAME");
+        String bucketName2 = dotenv.get("BUCKET_NAME");
+
+        if (bucketName == null || bucketName.isEmpty()) {
+            System.err.println("BUCKET_NAME saknas i .env");
+            return;
+        }
 
         S3Client s3Client = S3Client.builder()
                 .credentialsProvider(new AwsCredentialsProvider() {
                     @Override
                     public AwsCredentials resolveCredentials() {
-                        return AwsBasicCredentials.builder()
-                                .accessKeyId(accessKey)
-                                .secretAccessKey(secretKey).build();
+                        return AwsBasicCredentials.create(accessKey, secretKey);
                     }
                 })
-                .region(Region.EU_NORTH_1)
+                .region(Region.EU_NORTH_1) // Stockholm
                 .build();
-
-
-        TranscribeClient transcribeClient = TranscribeClient.builder()
-                .credentialsProvider(new AwsCredentialsProvider() {
-                    @Override
-                    public AwsCredentials resolveCredentials() {
-                        return AwsBasicCredentials.builder()
-                                .accessKeyId(accessKey)
-                                .secretAccessKey(secretKey).build();
-                    }
-                })
-                .region(Region.EU_NORTH_1)
-                .build();
-
 
         Scanner scanner = new Scanner(System.in);
 
-        // Implement Polly functionality here
-        while(true){
-            System.out.println("1. Start transcription");
-            System.out.println("4. Exit");
-            System.out.print("Choose an option: ");
-            String localFilePath = "src/main/resources/RecordingInEnglish.m4a";
-            String keyName = "RecordingInEnglish.m4a";
-            int choice = Integer.parseInt(scanner.nextLine());
-            switch(choice){
-                case 1:
-                    System.out.println("Ange filnamn för ljudfilen som ska transkriberas:");
-                    // Skapa en unik jobbnamn för transkribering
-                    String transcriptionJobName = "job-" + UUID.randomUUID().toString();
-                    // 1. Ladda upp ljudfilen till S3
-                    uploadFileToS3(s3Client, bucketName, keyName, localFilePath);
-                    startTranscriptionJob(transcribeClient, transcriptionJobName, bucketName, keyName);
-                    waitForTranscriptionToComplete(transcribeClient, transcriptionJobName);
-                    String urlForResult = getTranscriptResultUri(transcribeClient, transcriptionJobName);
-                    String transcriptText = getTranscriptTextFromUrl(urlForResult);
-                    System.out.println("Transkriberad text: " + transcriptText);
-                    break;
-                case 4:
-                    return;
+        while (true) {
+            System.out.println("\n--- Meny ---");
+            System.out.println("1. Lista alla filer i bucket");
+            System.out.println("2. Ladda upp fil");
+            System.out.println("3. Ladda ner fil");
+            System.out.println("4. Avsluta");
+            System.out.print("Välj alternativ: ");
+
+            String choice = scanner.nextLine();
+
+            try {
+                switch (choice) {
+                    case "1":
+                        listFiles(s3Client, bucketName);
+                        break;
+                    case "2":
+                        System.out.print("Ange lokal filväg: ");
+                        String localPath = scanner.nextLine();
+                        System.out.print("Ange filnamn i bucket: ");
+                        String uploadKey = scanner.nextLine();
+                        uploadFile(s3Client, bucketName, uploadKey, localPath);
+                        break;
+                    case "3":
+                        System.out.print("Ange filnamn i bucket: ");
+                        String downloadKey = scanner.nextLine();
+                        System.out.print("Ange lokal filväg att spara till: ");
+                        String savePath = scanner.nextLine();
+                        downloadFile(s3Client, bucketName, downloadKey, savePath);
+                        break;
+                    case "4":
+                        System.out.println("Avslutar...");
+                        return;
+                    default:
+                        System.out.println("Ogiltigt val, försök igen.");
+                }
+            } catch (Exception e) {
+                System.err.println("Fel: " + e.getMessage());
             }
         }
     }
 
-    private static String getTranscriptTextFromUrl(String transcriptUri) {
-        String transcriptText = null;
-        try {
-            URL url = new URL(transcriptUri);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.connect();
+    private void listFiles(S3Client s3Client, String bucketName) {
+        ListObjectsV2Request listReq = ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .build();
 
-            int responseCode = conn.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw new IOException("HTTP-felkod: " + responseCode);
-            }
+        ListObjectsV2Response listRes = s3Client.listObjectsV2(listReq);
 
-            try (InputStream inputStream = conn.getInputStream()) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                JsonNode rootNode = objectMapper.readTree(inputStream);
+        if (listRes.contents().isEmpty()) {
+            System.out.println("Inga filer i bucket.");
+        } else {
+            System.out.println("Filer i bucket:");
+            listRes.contents().forEach(obj -> System.out.println(" - " + obj.key()));
+        }
+    }
 
-                // Navigera i JSON-strukturen för att hitta transkriptionstexten
-                 transcriptText = rootNode.path("results").path("transcripts").get(0).path("transcript").asText();
+    private void uploadFile(S3Client s3Client, String bucketName, String keyName, String localFilePath) {
+        File file = new File(localFilePath);
+        if (!file.exists()) {
+            System.err.println("Filen finns inte lokalt.");
+            return;
+        }
 
-                System.out.println("\n--- Transkriberad text ---");
-                System.out.println(transcriptText);
-                System.out.println("--------------------------");
-            }
+        PutObjectRequest putRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(keyName)
+                .build();
 
+        s3Client.putObject(putRequest, RequestBody.fromFile(file));
+        System.out.println("Uppladdning klar: " + keyName);
+    }
+
+    private void downloadFile(S3Client s3Client, String bucketName, String keyName, String savePath) {
+        GetObjectRequest getRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(keyName)
+                .build();
+
+        try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getRequest);
+             InputStream in = s3Object) {
+            java.nio.file.Files.copy(in, new File(savePath).toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("Nedladdning klar: " + savePath);
         } catch (IOException e) {
-            System.err.println("Fel vid nedladdning eller parsning av transkriptionsfil: " + e.getMessage());
+            System.err.println("Fel vid nedladdning: " + e.getMessage());
         }
-        return transcriptText;
-    }
-    private String getTranscriptResultUri(TranscribeClient transcribeClient, String transcriptionJobName) {
-
-        try {
-            GetTranscriptionJobRequest getJobRequest = GetTranscriptionJobRequest.builder()
-                    .transcriptionJobName(transcriptionJobName)
-                    .build();
-
-            GetTranscriptionJobResponse response = transcribeClient.getTranscriptionJob(getJobRequest);
-            String transcriptUri = response.transcriptionJob().transcript().transcriptFileUri();
-            System.out.println("\nTranskriptionen finns på: " + transcriptUri);
-
-            return transcriptUri;
-
-            // Härifrån kan du ladda ner JSON-filen och bearbeta den för att få ut den rena texten
-            // (kod för nedladdning och parsing av JSON är utelämnad för att hålla exemplet kort)
-
-        } catch (TranscribeException e) {
-            System.err.println("Fel vid hämtning av transkriptionens URI: " + e.getMessage());
-            System.exit(1);
-        }
-        return null;
-    }
-
-
-    private static void waitForTranscriptionToComplete(TranscribeClient transcribeClient, String transcriptionJobName) {
-        GetTranscriptionJobRequest getJobRequest = GetTranscriptionJobRequest.builder()
-                .transcriptionJobName(transcriptionJobName)
-                .build();
-
-        try {
-            TranscriptionJobStatus jobStatus;
-            do {
-                GetTranscriptionJobResponse response = transcribeClient.getTranscriptionJob(getJobRequest);
-                jobStatus = response.transcriptionJob().transcriptionJobStatus();
-                System.out.print(".");
-                Thread.sleep(5000); // Vänta 5 sekunder
-            } while (jobStatus == TranscriptionJobStatus.IN_PROGRESS);
-
-            if (jobStatus == TranscriptionJobStatus.FAILED) {
-                System.err.println("\nTranskriberingsjobbet misslyckades.");
-                System.exit(1);
-            }
-        } catch (Exception e) {
-            System.err.println("\nFel under väntan på transkriberingsjobb: " + e.getMessage());
-            System.exit(1);
-        }
-
-
-    }
-
-    private static void startTranscriptionJob(TranscribeClient transcribeClient, String transcriptionJobName, String bucketName, String keyName) {
-
-        StartTranscriptionJobRequest request = StartTranscriptionJobRequest.builder()
-                .transcriptionJobName(transcriptionJobName)
-                .languageCode(LanguageCode.EN_US) // Ange språk
-                .media(Media.builder()
-                        .mediaFileUri("s3://" + bucketName + "/" + keyName)
-                        .build())
-                .build();
-
-        try {
-            transcribeClient.startTranscriptionJob(request);
-        } catch (TranscribeException e) {
-            System.err.println("Fel vid start av transkriberingsjobb: " + e.getMessage());
-            System.exit(1);
-        }
-
-        System.out.println("Transkriberingsjobb startat: " + transcriptionJobName);
-
-    }
-
-
-
-    private static void uploadFileToS3(S3Client s3Client, String bucketName, String keyName, String localFilePath) {
-
-        try {
-            File audioFile = new File(localFilePath);
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(keyName)
-                    .build();
-
-            s3Client.putObject(putObjectRequest, RequestBody.fromFile(audioFile));
-        } catch (Exception e) {
-            System.err.println("Fel vid uppladdning till S3: " + e.getMessage());
-            System.exit(1);
-        }
-    }
-
-    @Override
-    public void run(String... args) throws Exception {
-        runAI();
-//        runPolly();
-        return;
-
-
-
-//        Scanner scanner = new Scanner(System.in);
-//        S3Client s3Client = S3Client.builder()
-//                .credentialsProvider(new AwsCredentialsProvider() {
-//                    @Override
-//                    public AwsCredentials resolveCredentials() {
-//                        return AwsBasicCredentials.builder()
-//                                .accessKeyId(accessKey)
-//                                .secretAccessKey(secretKey).build();
-//                    }
-//                })
-//                .region(Region.EU_NORTH_1)
-//                .build();
-////        S3Client s3Client = new S3Client();
-////        s3Client.Connect(accessKey, secretKey);
-////        List<String> filnamnen =  s3Client.ListFiles(bucketName);
-//
-//
-//        while(true){
-//            System.out.println("1. Lista alla filer");
-//            System.out.println("2. Ladda upp fil");
-//            System.out.println("3. Ladda ner fil");
-//            System.out.println("4. Avsluta");
-//            System.out.print("Choose an option: ");
-//            int choice = Integer.parseInt(scanner.nextLine());
-//
-//            switch(choice){
-//                case 1:
-//                    System.out.println("Nu listas alla filer");
-//                    ListObjectsV2Request listReq = ListObjectsV2Request.builder()
-//                            .bucket(bucketName)
-//                            .build();
-//
-//     //               List<String> filer = new S3Service().ListAll();
-//
-//
-//                    ListObjectsV2Response listRes = s3Client.listObjectsV2(listReq);
-//                    List<String> filNamnen = listRes.contents().stream()
-//                            .map(S3Object::key)
-//                            .collect(Collectors.toList());
-//
-//                    filNamnen.forEach(System.out::println);
-//
-//                    // lista alla filer i bucketen som heter "teststefan0813"
-//                    break;
-//                case 2:
-//                    System.out.println("Vilken fil vill du ladda upp");
-//                    break;
-//                case 3:
-//                    System.out.println("Vilken fil vill du ladda ner fil");
-//                    break;
-//                case 4:
-//                    return;
-//            }
-
-//        }
     }
 }
