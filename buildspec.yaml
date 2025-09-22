@@ -6,7 +6,6 @@ phases:
   build:
     commands:
       - echo Build completed on `date`
-      - mvn package -Dmaven-test-skip
   post_build:
     commands:
       - echo Build completed on `date`
